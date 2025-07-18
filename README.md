@@ -1,7 +1,7 @@
 Hello World!<br>
 This project is in MAUI Blazor Hybrid. 
 It's a handy CRUD GridView that is portable, independent and easy to use. You only need this example line:<br>
-<EbiGrid Rows="Varzesh_Karan" Update="(IList Updated) => Update(Updated)" Headers="Headers" /><br>
+&lt;EbiGrid Rows="Varzesh_Karan" Update="(IList Updated) => Update(Updated)" Headers="Headers" /&gt;<br>
 where "Varzesh_Karan" is a List of people with this defenition:<br>
     List<Person> Varzesh_Karan = new List<Person>();<br>
     public class Person<br>
