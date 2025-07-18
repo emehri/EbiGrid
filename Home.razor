@@ -1,0 +1,93 @@
+﻿@page "/"
+<EbiGrid Rows="Varzesh_Karan" Update="(IList Updated) => Update(Updated)" Headers="Headers" />
+
+@code{
+    List<Person> Varzesh_Karan = new List<Person>();
+    Dictionary<string, string> Headers = new Dictionary<string, string>();
+    void Update(object Updated)
+    {
+        Varzesh_Karan = (List<Person>)Updated;
+        SqlConnection conn = new SqlConnection($"Server=.;Database={CommonNames.Current_Database};Trusted_Connection=True;TrustServerCertificate=True;");
+        Type? General_Type = Varzesh_Karan.GetType();
+        var Data_Types = General_Type.GetGenericArguments()[0];
+        var properties = Data_Types.GetProperties();
+        conn.Open();
+        string deleteQuery = $"DELETE FROM {CommonNames.Table_Title}";
+        SqlCommand cmd = new SqlCommand(deleteQuery, conn);
+        cmd.ExecuteNonQuery();
+        StreamWriter sw = new StreamWriter("f:\\debug0.txt");
+        foreach (var p in Varzesh_Karan)
+        {
+            string Names = "(", Values = "(";
+            int Index = 0;
+            foreach (var prop in properties)
+            {
+                if (Index > 0)
+                {
+                    Names += ", ";
+                    Values += ", ";
+                }
+                Names += prop.Name;
+                string tt = prop.PropertyType.Name;
+                string vv = prop.GetValue(p).ToString();
+                if (tt.ToLower().IndexOf("string") != -1 || string.IsNullOrEmpty(vv))
+                    Values += $"N'{vv}'";
+                else
+                    Values += vv;
+                Index++;
+                sw.WriteLine(tt);
+            }
+            Names += ")";
+            Values += ")";
+            string insertQuery = $"INSERT INTO {CommonNames.Table_Title} {Names} VALUES {Values}";
+            sw.WriteLine(insertQuery);
+            sw.Flush();
+            cmd = new SqlCommand(insertQuery, conn);
+            cmd.ExecuteNonQuery();
+        }
+        sw.Close();
+        StateHasChanged();
+    }
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+        Headers["ID"] = "ردیف";
+        Headers["First_Name"] = "نام کوچک";
+        Headers["Last_Name"] = "فامیلی";
+        Headers["Car"] = "خودرو";
+        Headers["Age"] = "سن";
+        Headers["Height"] = "قد";
+        Headers["Salary"] = "درآمد";
+        Read_db();
+    }
+    void Read_db()
+    {
+        var db = new AppDbContext();
+        var test = db.Mardom;
+        if (test != null)
+            Varzesh_Karan = test.ToList();
+    }
+    public class Person
+    {
+        public int ID { get; set; }
+        public string First_Name { get; set; } = "";
+        public string Last_Name { get; set; } = "";
+        public string Car { get; set; } = "";
+        public int Age { get; set; }
+        public int Height { get; set; }
+        public double Salary { get; set; }
+    }
+    public class AppDbContext : DbContext
+    {
+        public DbSet<Person> Mardom { get; set; }
+        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+        {
+            optionsBuilder.UseSqlServer($"Server=.;Database={CommonNames.Current_Database};Trusted_Connection=True;TrustServerCertificate=True;");
+        }
+    }
+    public static class CommonNames
+    {
+        public static string Current_Database = "Emehri";
+        public static string Table_Title = "Mardom";
+    }
+}

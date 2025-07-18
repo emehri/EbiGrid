@@ -1,0 +1,1163 @@
+﻿@using System.Text
+@using System.Reflection
+@using System.Collections
+@using OfficeOpenXml
+
+<style>
+    button {
+        margin-left: 5px;
+        background-color: darkblue;
+        color: white;
+    }
+
+    select {
+        color: white;
+        background-color: darkgreen;
+    }
+
+    input {
+        color: white;
+        background-color: darkred;
+    }
+
+    * {
+        font-family: Calibri;
+        font-weight: bolder;
+    }
+</style>
+<input type="checkbox" @bind="Export" @bind:after="Init_Export" /> Export? &nbsp;&nbsp; ■■ &nbsp;&nbsp;
+<input type="checkbox" @bind="Enable_Delete" /> Deleting? &nbsp;&nbsp; ■■ &nbsp;&nbsp;
+<input type="checkbox" @bind="Is_Farsi" /> Farsi? &nbsp;&nbsp; ■■ &nbsp;&nbsp;
+<input type="checkbox" @bind="Enable_Filtering" @onclick="Refresh_Filters" /> Filtering? &nbsp;&nbsp; ■■ &nbsp;&nbsp;
+<input type="checkbox" @bind="Enable_Insert_Row" /> Add Row? &nbsp;&nbsp; ■■ &nbsp;&nbsp;
+<input type="checkbox" @bind="Sort_Kon" /> Sort?
+<br />
+<br />
+@code{
+    string Folder_Name = "";
+    string File_Name = "";
+    bool Enable_Delete;
+    bool Enable_Filtering = false;
+    bool Enable_Insert_Row = false;
+    void Init_Export()
+    {
+        Single_Entire = "Entire Table";
+        Format = "xml";
+        Folder_Name = FileSystem.AppDataDirectory;
+    }
+}
+@if (Export)
+{
+    <span>Folder: </span>
+    <InputText @bind-Value="@Folder_Name" style="width:301px;" />
+    <button @onclick="Clear_Folder_Name">Clear</button>
+    @code{
+        void Clear_Folder_Name()
+        {
+            Folder_Name = "";
+        }
+    }
+    <span> File Name: </span>
+    <InputText @bind-Value="@File_Name" style="width:150px;" />
+    <span style="margin-right:10px; margin-left:10px;">●</span>
+    <select @bind="Single_Entire" @bind:after="Change_Single">
+        <option value="Entire Table">Entire Table</option>
+        @for (int col = 0; col < Header.Cells.Count; col++)
+        {
+            int c2 = col;
+            <option value="@c2">Only @Header.Cells[c2].Title</option>
+        }
+    </select>
+    <span>&nbsp; &nbsp;</span>
+    @code{
+        string Single_Entire = "Entire Table";
+        void Change_Single()
+        {
+            if (Single_Entire != "Entire Table")
+                Format = "txt";
+            else
+                Format = "xml";
+            Hide();
+        }
+    }
+    @if (Single_Entire == "Entire Table")
+    {
+        <select @bind=@Format @bind:after="Hide">
+            <option value="csv">CSV</option>
+            <option value="xlsx">Excel</option>
+            <option value="json">JSON</option>
+            <option value="html">HTML</option>
+            <option value="sql">SQL</option>
+            <option value="tsv">TSV</option>
+            <option value="xml">XML</option>
+            <option value="yaml">YAML</option>
+        </select>
+    }
+    else
+    {
+        <select @bind="@Format">
+            <option value="txt">TXT</option>
+        </select>
+    }
+    @code{
+        void Hide()
+        {
+            Done_Export = false;
+            Error_Export = "";
+        }
+    }
+    <button @onclick="Save" style="margin-left:20px; width:70px;">Export</button>
+    <span style="color:red;">@Error_Export</span>
+    @if (Done_Export)
+    {
+        <span style="color:forestgreen;">&nbsp; ► Done</span>
+    }
+    <br />
+    <br />
+}
+@code{
+    string Save_FileName = "";
+    string Format = "";
+    bool Export = false;
+    string Error_Export = "";
+    bool Done_Export = false;
+    void Save()
+    {
+        if (string.IsNullOrWhiteSpace(Folder_Name) || string.IsNullOrWhiteSpace(File_Name))
+            return;
+        Folder_Name = Folder_Name.Trim();
+        File_Name = File_Name.Trim();
+        if (Folder_Name[Folder_Name.Length - 1] != '\\')
+            Folder_Name += "\\";
+        Save_FileName = Folder_Name + File_Name;
+        Save_FileName = Save_FileName.Replace("/", "\\");
+        string Path1 = Save_FileName + "." + Format;
+        try
+        {
+            File.WriteAllText(Path1, ".");
+        }
+        catch (Exception ex)
+        {
+            Error_Export = " ► " + ex.Message;
+            StateHasChanged();
+            return;
+        }
+        try
+        {
+            if (Format == "xml")
+                Save_Database_in_XML_Tabular(Path1);
+            if (Format == "json")
+                Save_Database_in_JSON_Tabular(Path1);
+            if (Format == "tsv")
+                Save_TSV(Path1);
+            if (Format == "yaml")
+                Write_YAML(Path1);
+            if (Format == "csv")
+                Save_CSV(Path1);
+            if (Format == "html")
+                Write_HTML(Path1);
+            if (Format == "sql")
+                Save_SQL_To_File(Path1);
+            if (Format == "xlsx")
+                Save_Excel_To_File(Path1);
+            if (Format == "txt")
+                Write_One_Column(Single_Entire, Path1);
+            Error_Export = "";
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Error_Export = " ► " + ex.Message;
+            StateHasChanged();
+            return;
+        }
+        Done_Export = true;
+    }
+    void Save_Excel_To_File(string fileName)
+    {
+        var rr = new EPPlusLicense();
+        rr.SetNonCommercialPersonal("ebrahim");
+        var package = new ExcelPackage();
+        var worksheet = package.Workbook.Worksheets.Add("My Table");
+        if (Data.Count == 0)
+            return;
+        int cc = 0;
+        for (int col = 1; col <= Header.Cells.Count; col++)
+        {
+            string salam = Header.Cells[col - 1].Title;
+            if (Headers.ContainsKey(salam))
+                salam = Headers[salam];
+            if (string.IsNullOrWhiteSpace(salam))
+                continue;
+            cc++;
+            worksheet.Cells[1, cc].Value = salam;
+            int Line = 2;
+            for (int row = 2; row <= Data.Count + 1; row++)
+            {
+                if (!Valid(Data[row - 2]))
+                    continue;
+                worksheet.Cells[Line, cc].Value = Data[row - 2].Cells[col - 1].Value;
+                Line++;
+            }
+        }
+        package.SaveAs(new FileInfo(fileName));
+    }
+    void Write_One_Column(string Scol, string Path1)
+    {
+        int col = int.Parse(Scol);
+        StreamWriter sw = new StreamWriter(Path1, false, Encoding.UTF8);
+        for (int i = 0; i < Data.Count; i++)
+            sw.WriteLine(Data[i].Cells[col].Value);
+        sw.Close();
+    }
+    bool Yes_Add_Field = false;
+    List<string> New_Row = new List<string>();
+    void Init_Add()
+    {
+        Row_Being_Edited = -1;
+        New_Row.Clear();
+        for (int i = 0; i < Header.Cells.Count; i++)
+            New_Row.Add("");
+    }
+    void OK_Add()
+    {
+        Row ww = new Row();
+        for (int i = 0; i < Header.Cells.Count; i++)
+        {
+            string s = New_Row[i];
+            Datum dd = new Datum(Header.Cells[i].Title, s);
+            ww.Cells.Add(dd);
+        }
+        mey = ww.Cells.Count;
+        Data.Add(ww);
+        Sort_All();
+        Cancel_Add();
+        Save_Kon();
+        Init_Add();
+    }
+    void Cancel_Add()
+    {
+        Row_Being_Edited = -1;
+        Yes_Add_Field = false;
+        New_Row.Clear();
+        for (int i = 0; i < Header.Cells.Count; i++)
+            New_Row.Add("");
+        StateHasChanged();
+    }
+    int mey = 0;
+}
+@if (Enable_Insert_Row)
+{
+    <table>
+        <tr>
+            @for (int ii = 0; ii < Header.Cells.Count; ii++)
+            {
+                int jj = ii;
+                string salam1 = Header.Cells[jj].Title;
+                if (Headers.ContainsKey(salam1))
+                    salam1 = Headers[salam1];
+                if (salam1 != "")
+                {
+                    <td style="text-align:center">
+                        @Format_Title(salam1)
+                    </td>
+                }
+            }
+        </tr>
+        <tr>
+            @for (int ii = 0; ii < Header.Cells.Count; ii++)
+            {
+                int jj = ii;
+                string salam = Header.Cells[jj].Title;
+                if (Headers.ContainsKey(salam))
+                    salam = Headers[salam];
+                if (string.IsNullOrWhiteSpace(salam))
+                {
+                    continue;
+                }
+                <td>
+                    @{
+                        string dir = "text-align:left; direction:ltr;";
+                        if (Is_Farsi)
+                            dir = "text-align:right; direction:rtl;";
+                    }
+                    <input @bind="New_Row[jj]" style="@dir" @bind:event="oninput" />
+                </td>
+            }
+        </tr>
+    </table>
+    <button @onclick="OK_Add">Add</button>
+    <button @onclick="Cancel_Add">Clear</button>
+    <br />
+    <br />
+}
+@if (Sort_Kon)
+{
+    foreach (var xx in Meyar)
+    {
+        <b>&nbsp; &nbsp;→ @xx.Title @(xx.Is_Ascending ? "Ascending" : "Descending")</b>
+        <span>&nbsp; &nbsp; then by... </span>
+    }
+    <select @bind="Gozineh" @bind:event="oninput">
+        <option value="">---</option>
+        @for (int p = 0; p < Constant_Sort.Count; p++)
+        {
+            int q = p;
+            string yy = Constant_Sort[q];
+            if (Meyar_s.IndexOf("+" + yy.Replace(" Ascending", "").Replace(" Descending", "") + "+") != -1)
+                continue;
+            <option value="@yy">@yy</option>
+        }
+    </select>
+    <span>&nbsp; &nbsp;</span>
+    <button @onclick="Add_Sort">Add Field</button>
+    <span>&nbsp; &nbsp;</span>
+    <button @onclick="Clear_Sort">Clear</button>
+    <br />
+    <br />
+}
+<select @bind="@Page_Size_String" @bind:event="oninput" @onchange="Change_Size">
+    <option value="10">10</option>
+    <option value="50">50</option>
+    <option value="100">100</option>
+    <option value="500">500</option>
+    <option value="1000">1000</option>
+</select>
+<button @onclick="Go_Back">Back</button> ↔ <button @onclick="Go_Next">Next</button>
+<br /><br />
+@{
+    void Go_Back()
+    {
+        if (Page_Number == 1)
+            return;
+        Page_Number--;
+        Row_Being_Edited = -1;
+        StateHasChanged();
+    }
+    void Go_Next()
+    {
+        if (Page_Number * Page_Size >= dummy.Count)
+            return;
+        Page_Number++;
+        Row_Being_Edited = -1;
+        StateHasChanged();
+    }
+}
+@for (int p = 1; p <= Number_of_Pages; p++)
+{
+    int q = p;
+    if ((q - 1) * Page_Size >= dummy.Count)
+        break;
+    string BColor = "darkblue";
+    if (Page_Number == q)
+        BColor = "darkgreen";
+    <button @onclick="() => Go_Button(q)" style="background-color:@BColor; margin:3px;">@q</button>
+}
+<br />
+@{
+    void Go_Button(int p)
+    {
+        Page_Number = p;
+        Row_Being_Edited = -1;
+        StateHasChanged();
+    }
+}
+<br />
+<div style="resize: both; overflow: auto; border: 1px solid green; width: 3000px; height: 600px;">
+    <table>
+        <tr>
+            <td style="text-align:center;">###</td>
+            <td style="text-align:center; width:100px;"><button @onclick="Refresh_Filters">Clear</button></td>
+            @code{
+                void Refresh_Filters()
+                {
+                    for (int i = 0; i < Filter.Count; i++)
+                    {
+                        Filter[i] = "";
+                        Reverse[i] = false;
+                        min[i] = "";
+                        max[i] = "";
+                    }
+                    Number_of_Pages = (Data.Count - 1) / Page_Size + 1;
+                    Reset();
+                    Update_Filter();
+                }
+            }
+            @for (int col = 0; col < Header.Cells.Count; col++)
+            {
+                int cc = col;
+                string salam = Header.Cells[cc].Title;
+                if (Headers.ContainsKey(salam))
+                    salam = Headers[salam];
+                if (string.IsNullOrWhiteSpace(salam))
+                {
+                    continue;
+                }
+                <td>
+                    <div style="resize: horizontal; width: 200px; overflow: auto; ">
+                        <div style="text-align: center; ">
+                            @Format_Title(salam)
+                        </div>
+                        @code{
+                            string Format_Title(string s)
+                            {
+                                string ss = "";
+                                for (int i = 0; i < s.Length; i++)
+                                {
+                                    ss += s[i];
+                                    if (i < s.Length - 1 && char.IsLower(s[i]) && char.IsUpper(s[i + 1]))
+                                        ss += " ";
+                                }
+                                return ss.Replace("_", " ");
+                            }
+                        }
+                        @if (Enable_Filtering)
+                        {
+                            if (Treat_Like_String.IndexOf(Column_Type[cc]) != -1)
+                            {
+                                <br />
+                                <input @bind="@Filter[cc]" @bind:event="oninput" @bind:after="Update_Filter" style="width:70%;" />
+                            }
+                            else
+                            {
+                                <br />
+                                <input @bind="@min[cc]" @bind:event="oninput" @bind:after="Update_Filter" style="width:25%;" />
+                                <b> ≤ n ≤ </b>
+                                <input @bind="@max[cc]" @bind:event="oninput" @bind:after="Update_Filter" style="width:25%;" />
+                            }
+                            <span style="font-size:larger; color:darkred;"> X </span>
+                            <input type="checkbox" @bind="@Reverse[cc]" @bind:event="oninput" @bind:after="Update_Filter" />
+                        }
+                        <br />
+                        @code{
+                            void Update_Filter()
+                            {
+                                dummy.Clear();
+                                Page_Number = 1;
+                                foreach (var xx in Data)
+                                    if (Valid(xx))
+                                        dummy.Add(0);
+                                Row_Being_Edited = -1;
+                                StateHasChanged();
+                            }
+                        }
+                    </div>
+                </td>
+            }
+        </tr>
+        @code
+        {
+            [Parameter]
+            public Action<IList>? Update { get; set; }
+            void Save_Kon()
+            {
+                IList output = DynamicListCreator.CreateList(Data_Types, Data);
+                Update?.Invoke(output);
+                StateHasChanged();
+            }
+        }
+        @{ dummy.Clear(); int row_Num = 0; }
+        @for (int row = 0; row < Data.Count; row++)
+        {
+            int rr = row;
+            if (!Valid(Data[rr]))
+                continue;
+            dummy.Add(0);
+            row_Num++;
+            if (dummy.Count > Page_Size * Page_Number || dummy.Count <= Page_Size * (Page_Number - 1))
+                continue;
+            int row2 = row_Num;
+            string rowc = "lightgray";
+            if (row2 % 2 == 0)
+                rowc = "lightyellow";
+            <tr style="border-color: darkblue; border-radius: 50%; background-color:@rowc;">
+                <td style="color:darkgreen;">@row2</td>
+                @if (Row_Being_Edited == rr)
+                {
+                    <td>
+                        <button @onclick="OK_Editing">OK</button>
+                        <button @onclick="Cancel_Editing">Cancel</button>
+                    </td>
+                }
+                else
+                {
+                    <td style="width:100px;">
+                        <button @onclick="()=>Select_Row(rr)">Edit</button>
+                        @if (Enable_Delete)
+                        {
+                            <button @onclick="()=>RemoveAt(rr)">Delete</button>
+                        }
+                    </td>
+                }
+                @code{
+                    void RemoveAt(int rr1)
+                    {
+                        Data.RemoveAt(rr1);
+                        Number_of_Pages = (Data.Count - 1) / Page_Size + 1;
+                        if (Page_Number > Number_of_Pages)
+                            Page_Number--;
+                        Save_Kon();
+                        StateHasChanged();
+                    }
+                    void Cancel_Editing()
+                    {
+                        Row_Being_Edited = -1;
+                        StateHasChanged();
+                    }
+                    void OK_Editing()
+                    {
+                        for (int i = 0; i < Row_Data.Count; i++)
+                        {
+                            string s = Row_Data[i];
+                            //if (s.IndexOf("==") != -1)
+                            Data[Row_Being_Edited].Cells[i].Value = s;
+                        }
+                        Sort_All();
+                        Save_Kon();
+                        Cancel_Editing();
+                    }
+                    void Select_Row(int n)
+                    {
+                        Row_Being_Edited = n;
+                        for (int i = 0; i < Header.Cells.Count; i++)
+                            Row_Data[i] = Data[n].Cells[i].Value.ToString();
+                    }
+                    List<string> Row_Data = new List<string>();
+                }
+                @for (int col = 0; col < Header.Cells.Count; col++)
+                {
+                    int cc = col;
+                    string salam = Header.Cells[cc].Title;
+                    if (Headers.ContainsKey(salam))
+                        salam = Headers[salam];
+                    if (string.IsNullOrWhiteSpace(salam))
+                    {
+                        continue;
+                    }
+                    if (Row_Being_Edited == rr)
+                    {
+                        string dir = "text-align:left; direction:ltr;";
+                        if (Is_Farsi)
+                            dir = "text-align:right; direction:rtl;";
+                        <td>
+                            <input @bind="Row_Data[cc]" style="width:190px; @dir" @bind:event="oninput" />
+                        </td>
+                    }
+                    else
+                    {
+                        string shown = Data[rr].Cells[cc].Value.ToString();
+                        string dir2 = "text-align:left; direction:ltr;";
+                        if (Is_Farsi)
+                        {
+                            dir2 = "text-align:right; direction:rtl;";
+                            shown = To_Farsi_Digit(shown);
+                        }
+                        <td style="@dir2">@shown</td>
+                    }
+                }
+            </tr>
+        }
+    </table>
+</div>
+@code {
+    [Parameter]
+    public object? Rows { get; set; }
+    List<Row> Data = new List<Row>();
+    bool Sort_Kon = false;
+    int Row_Being_Edited = -1;
+    void Reset()
+    {
+        Page_Number = 1;
+        Number_of_Pages = (Data.Count - 1) / Page_Size + 1;
+        Sort_All();
+        Row_Being_Edited = -1;
+        Enable_Delete = false;
+        try { StateHasChanged(); }
+        catch { }
+    }
+    List<SortDefinition> Meyar = new List<SortDefinition>();
+    List<string> Constant_Sort = new List<string>();
+    int Page_Size = 10;
+    int Page_Number = 1;
+    int Number_of_Pages;
+    bool Is_First = true;
+    Row Header = new Row();
+    string Page_Size_String = "";
+    List<string> min = new List<string>();
+    List<string> max = new List<string>();
+    List<string> Filter = new List<string>();
+    List<bool> Reverse = new List<bool>();
+    string Treat_Like_String = "+System.String+System.Boolean+System.Char+System.DateTime+";
+    void Change_Size()
+    {
+        Page_Size = int.Parse(Page_Size_String);
+        Reset();
+    }
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+        Page_Size_String = "10";
+        Start();
+    }
+    protected override void OnParametersSet()
+    {
+        base.OnParametersSet();
+        Start();
+    }
+    void Start()
+    {
+        Row_Data.Clear();
+        Column_Type.Clear();
+        Constant_Sort.Clear();
+        Header.Cells.Clear();
+        Data.Clear();
+        Read_Data_from_Rows();
+        for (int i = 0; i < Header.Cells.Count; i++)
+        {
+            Row_Data.Add("");
+        }
+        foreach (var xx in Data)
+            dummy.Add(0);
+        Init_Add();
+    }
+    bool Valid(Row rr)
+    {
+        int k = -1;
+        double? val, mini, maxi;
+        List<bool> result = new List<bool>();
+        if (!Enable_Filtering)
+            return true;
+        foreach (Datum dd in rr.Cells)
+        {
+            k++;
+            if (Treat_Like_String.IndexOf(Column_Type[k]) != -1)
+            {
+                if (string.IsNullOrWhiteSpace(Filter[k]))
+                    continue;
+                if (dd.Value.ToString().IndexOf(Filter[k], StringComparison.OrdinalIgnoreCase) == -1 && Reverse[k] == false)
+                    return false;
+                if (dd.Value.ToString().IndexOf(Filter[k], StringComparison.OrdinalIgnoreCase) != -1 && Reverse[k] == true)
+                    return false;
+                continue;
+            }
+            try
+            {
+                val = double.Parse(dd.Value.ToString());
+            }
+            catch
+            {
+                continue;
+            }
+            min[k] = min[k].Trim();
+            max[k] = max[k].Trim();
+            try
+            {
+                mini = double.Parse(min[k]);
+            }
+            catch
+            {
+                mini = null;
+            }
+            try
+            {
+                maxi = double.Parse(max[k]);
+            }
+            catch
+            {
+                maxi = null;
+            }
+            if (!Reverse[k])
+            {
+                if (mini != null && val < mini)
+                    return false;
+                if (maxi != null && val > maxi)
+                    return false;
+            }
+            else
+            {
+                if (mini != null && val < mini)
+                    continue;
+                if (maxi != null && val > maxi)
+                    continue;
+                return false;
+            }
+        }
+        return true;
+    }
+    Type? Data_Types;
+    string elementName = "";
+    [Parameter]
+    public Dictionary<string, string> Headers { get; set; } = new Dictionary<string, string>();
+    void Read_Data_from_Rows()
+    {
+        if (Rows == null)
+            return;
+        Type? General_Type = Rows.GetType();
+        if (!General_Type.IsGenericType)
+            return;
+        try
+        {
+            Data_Types = General_Type.GetGenericArguments()[0];
+        }
+        catch
+        {
+            return;
+        }
+        elementName = General_Type.Name;
+        var properties = Data_Types.GetProperties();
+        var Headers = Data_Types.GetField("");
+        int k = 0;
+        StreamWriter sw = new StreamWriter("f:\\salam123.txt");
+        foreach (var yy in (IEnumerable)Rows)
+        {
+            Row rr = new Row();
+            int n = 0;
+            foreach (var prop in properties)
+                if (prop.PropertyType.ToString().IndexOf("System.") == 0)
+                {
+                    Datum dd = new Datum(prop.Name, prop.GetValue(yy));
+                    rr.Cells.Add(dd);
+                    n++;
+                    sw.WriteLine(prop.PropertyType.Name);
+                }
+            Data.Add(rr);
+        }
+        sw.Close();
+        foreach (var prop in properties)
+            if (prop.PropertyType.ToString().IndexOf("System.") == 0)
+            {
+                if (properties.Count() > Filter.Count)
+                {
+                    Filter.Add("");
+                    Reverse.Add(false);
+                    min.Add("");
+                    max.Add("");
+                }
+                k++;
+                Datum xx = new Datum(prop.Name, null);
+                Header.Cells.Add(xx);
+                Constant_Sort.Add($"{prop.Name} Ascending");
+                Constant_Sort.Add($"{prop.Name} Descending");
+                Column_Type.Add(prop.PropertyType.Name);
+            }
+        Reset();
+    }
+    string Meyar_s = "";
+    List<int> dummy = new List<int>();
+    SortDefinition To_SortDefinition(string s)
+    {
+        SortDefinition xx = new SortDefinition();
+        xx.Title = s.Replace(" Ascending", "").Replace(" Descending", "");
+        if (s.IndexOf(" Ascending") != -1)
+            xx.Is_Ascending = true;
+        else
+            xx.Is_Ascending = false;
+        foreach (var rr in Header.Cells)
+            if (rr.Title == xx.Title)
+                xx.Type_of_Field = rr.GetType();
+        return xx;
+    }
+    string Gozineh = "---";
+    void Clear_Sort()
+    {
+        Meyar.Clear();
+        Meyar_s = "";
+        Row_Being_Edited = -1;
+        StateHasChanged();
+    }
+    void Add_Sort()
+    {
+        Row_Being_Edited = -1;
+        var xx = To_SortDefinition(Gozineh);
+        if (xx.Title != "" && xx.Title != "---")
+        {
+            Meyar.Add(xx);
+            string g = xx.Title.Replace(" Ascending", "").Replace(" Descending", "");
+            Meyar_s += $"+{g}+";
+        }
+        Gozineh = "---";
+        Page_Number = 1;
+        Sort_All();
+    }
+    void Sort_All()
+    {
+        if (Meyar.Count == 0)
+            return;
+        Data.Sort((x, y) =>
+        {
+            int p = 1;
+            foreach (SortDefinition SD in Meyar)
+            {
+                if (SD.Is_Ascending)
+                    p = 1;
+                else
+                    p = -1;
+                for (int i = 0; i < Header.Cells.Count; i++)
+                {
+                    if (Header.Cells[i].Title != SD.Title)
+                        continue;
+                    object? o1 = x.Cells[i].Value;
+                    object? o2 = y.Cells[i].Value;
+                    if (o1 == null || o2 == null)
+                        continue;
+                    string s1 = o1.ToString();
+                    string s2 = o2.ToString();
+                    if (s1 == s2)
+                        break;
+                    if (Treat_Like_String.IndexOf(Column_Type[i]) != -1)
+                    {
+                        if (s1 != s2)
+                            return (s1.CompareTo(s2)) * p;
+                    }
+                    else
+                    {
+                        double v1 = double.Parse(s1);
+                        double v2 = double.Parse(s2);
+                        if (v1 != v2)
+                            return (v1.CompareTo(v2)) * p;
+                    }
+                }
+            }
+            return 0;
+        });
+        Save_Kon();
+        StateHasChanged();
+    }
+    void Save_Database_in_XML_Tabular(string fn1)
+    {
+        StreamWriter sw = new StreamWriter(fn1, false, Encoding.UTF8);
+        sw.WriteLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+        string ff = File_Name.Replace(" ", "_").Trim();
+        if (char.IsDigit(ff[0]))
+            ff = "_" + ff;
+        sw.WriteLine($"<{File_Name}>");
+        for (int row = 0; row < Data.Count; row++)
+        {
+            if (!Valid(Data[row]))
+                continue;
+            sw.WriteLine($"   <{Data_Types.Name}>");
+            for (int col = 0; col < Header.Cells.Count; col++)
+                sw.WriteLine("      <{0}>{1}</{0}>", Data[row].Cells[col].Title, Data[row].Cells[col].Value);
+            sw.WriteLine($"   </{Data_Types.Name}>");
+        }
+        sw.WriteLine($"</{File_Name}>");
+        sw.Close();
+    }
+    void Save_SQL_To_File(string fn)
+    {
+        List<string> order = new List<string>();
+        StreamWriter sw = new StreamWriter(fn, false, Encoding.UTF8);
+        string Name = "";
+        if (Data.Count == 0) return;
+        for (int i = fn.LastIndexOf(".") - 1; fn[i] != '\\'; i--)
+            Name = fn[i] + Name;
+        order.Clear();
+        sw.WriteLine($"CREATE TABLE IF NOT EXISTS '{Name}' (");
+        int k = 0;
+        foreach (var xx in Header.Cells)
+        {
+            string g1 = xx.GetType().Name;
+            string f1 = "nvarchar(MAX)";
+            if (g1.IndexOf("Int") != -1)
+                f1 = "int";
+            if (g1.IndexOf("Double") != -1)
+                f1 = "real";
+            sw.Write($"\t{xx.Title.ToUpper()}   " + f1.ToUpper());
+            k++;
+            if (k < Header.Cells.Count) sw.WriteLine(",");
+        }
+        sw.WriteLine("\r\n);");
+        string s = $"INSERT INTO '{Name}' (";
+        bool avval = true;
+        order.Clear();
+        foreach (var yy in Header.Cells)
+        {
+            if (!avval) s += ",";
+            avval = false;
+            s += $"'{yy.Title}'";
+            order.Add(yy.Title);
+        }
+        s += ") VALUES\r\n";
+        bool firstRow = true;
+        foreach (var xx in Data)
+        {
+            if (!Valid(xx))
+                continue;
+            if (!firstRow) s += ",\n";
+            firstRow = false;
+            avval = true;
+            s += "(";
+            for (int i = 0; i < xx.Cells.Count; i++)
+            {
+                if (!avval) s += ",";
+                avval = false;
+                s += $"'{xx.Cells[i].Value}'";
+            }
+            s += ")";
+        }
+        s += ";\n";
+        sw.WriteLine(s);
+        sw.Flush();
+        sw.Close();
+    }
+    void Save_Database_in_JSON_Tabular(string fn)
+    {
+        StreamWriter sw = new StreamWriter(fn, false, Encoding.UTF8);
+        int n = 0;
+        sw.WriteLine("[");
+        int m = 0;
+        foreach (var temp in Data)
+        {
+            if (!Valid(temp))
+                continue;
+            sw.WriteLine("\t{");
+            n = 0;
+            foreach (var xx in temp.Cells)
+            {
+                sw.Write($"\t\t\"{xx.Title}\" : {noNum(xx.Value.ToString())}");
+                n++;
+                if (n < temp.Cells.Count) sw.Write(",");
+                sw.WriteLine();
+            }
+            sw.Write("\t}");
+            m++;
+            if (m < Data.Count) sw.Write(",");
+            sw.WriteLine();
+        }
+        sw.WriteLine("]");
+        sw.Flush();
+        sw.Close();
+    }
+    static string noNum(string s)
+    {
+        if (s == "true" || s == "false") return s;
+        try
+        {
+            double test = double.Parse(s);
+        }
+        catch
+        {
+            return $"\"{s}\"";
+        }
+        return s;
+    }
+    void Save_TSV(string filename)
+    {
+        StreamWriter sw = new StreamWriter(filename, false, Encoding.UTF8);
+        bool isFirstLine = true;
+        foreach (var temp in Data)
+        {
+            if (!Valid(temp)) continue;
+            if (isFirstLine)
+            {
+                bool ff = false;
+                foreach (var xx in temp.Cells)
+                {
+                    if (ff) sw.Write("\t");
+                    sw.Write(xx.Title);
+                    ff = true;
+                }
+                isFirstLine = false;
+                sw.WriteLine();
+            }
+            bool comma = false;
+            foreach (var xx in temp.Cells)
+            {
+                if (comma) sw.Write("\t");
+                sw.Write(xx.Value);
+                comma = true;
+            }
+            sw.WriteLine();
+        }
+        sw.Flush();
+        sw.Close();
+    }
+    void Write_YAML(string fn)
+    {
+        StreamWriter sw = new StreamWriter(fn, false, Encoding.UTF8);
+        foreach (var row in Data)
+        {
+            if (!Valid(row)) continue;
+            sw.WriteLine("---");
+            foreach (var xx in row.Cells)
+                sw.WriteLine("{0}: {1}", xx.Title, xx.Value);
+        }
+        sw.Flush();
+    }
+    void Save_CSV(string filename)
+    {
+        StreamWriter sw = new StreamWriter(filename, false, Encoding.UTF8);
+        bool isFirstLine = true;
+        foreach (var temp in Data)
+        {
+            if (!Valid(temp)) continue;
+            if (isFirstLine)
+            {
+                bool ff = false;
+                foreach (var xx in temp.Cells)
+                {
+                    if (ff) sw.Write(",");
+                    sw.Write(xx.Title);
+                    ff = true;
+                }
+                isFirstLine = false;
+                sw.WriteLine();
+            }
+            bool comma = false;
+            foreach (var xx in temp.Cells)
+            {
+                if (comma) sw.Write(",");
+                sw.Write(xx.Value);
+                comma = true;
+            }
+            sw.WriteLine();
+        }
+        sw.Flush();
+        sw.Close();
+    }
+    void Write_HTML(string fn)
+    {
+        string css = "<style>td{border:1px black solid} .header{font-weight:bolder; background-color:lightred;} h1{color:purple; text-align:center;}</style>";
+        string tables = "";
+        string one_Table = "";
+        one_Table += "<table>";
+        one_Table += "<tr class='header'>";
+        List<string> col = new List<string>();
+        foreach (var ss in Header.Cells)
+        {
+            one_Table += $"<td>{ss.Title}</td>";
+            col.Add(ss.Title);
+        }
+        one_Table += "</tr>";
+        foreach (var xx in Data)
+        {
+            if (!Valid(xx)) continue;
+            one_Table += "<tr>";
+            for (int i = 0; i < xx.Cells.Count; i++)
+            {
+                one_Table += $"<td>{xx.Cells[i].Value}</td>";
+            }
+            one_Table += "</tr>";
+        }
+        one_Table += "</table><br>";
+        tables += one_Table;
+        string final = $"<html><head>{css}</head><body>{tables}</body></html>";
+        File.WriteAllText(fn, final, Encoding.UTF8);
+    }
+    List<string> Column_Type = new List<string>();
+    bool Is_Farsi = false;
+    public void Refresh(object input)
+    {
+        Rows = input;
+        OnInitialized();
+        //StateHasChanged();
+    }
+    string To_Farsi_Digit(string s)
+    {
+        s = s.Replace("0", "۰").Replace("1", "۱").Replace("2", "۲").Replace("3", "۳").Replace("4", "۴").Replace("5", "۵").Replace("6", "۶").Replace("7", "۷").Replace("8", "۸").Replace("9", "۹");
+        return s;
+    }
+    public static class DynamicListCreator
+    {
+        /// <summary>
+        /// Creates a List of objects with different property values for each object
+        /// </summary>
+        /// <param name="objectType">The type of objects to create</param>
+        /// <param name="objectsData">List of dictionaries, each containing property data for one object</param>
+        /// <returns>IList containing the created objects</returns>
+        public static IList CreateList(Type objectType, List<Row> objectsData)
+        {
+            Type listType = typeof(List<>).MakeGenericType(objectType);
+            IList list = (IList)Activator.CreateInstance(listType);
+
+            foreach (var propertyData in objectsData)
+            {
+                object obj = CreateObject(objectType, propertyData);
+                list.Add(obj);
+            }
+
+            return list;
+        }
+
+        /// <summary>
+        /// Creates a single object of the specified type with given property values
+        /// </summary>
+        /// <param name="objectType">The type of object to create</param>
+        /// <param name="propertyData">Dictionary where key is property name and value is the property value</param>
+        /// <returns>Created object instance</returns>
+        private static object CreateObject(Type objectType, Row propertyData)
+        {
+            // Create an instance of the object
+            object obj = Activator.CreateInstance(objectType);
+
+            // Set property values using reflection
+            foreach (var kvp in propertyData.Cells)
+            {
+                PropertyInfo property = objectType.GetProperty(kvp.Title);
+                if (property != null && property.CanWrite)
+                {
+                    // Handle type conversion if necessary
+                    object value = ConvertValue(kvp.Value, property.PropertyType);
+                    property.SetValue(obj, value);
+                }
+            }
+
+            return obj;
+        }
+
+        /// <summary>
+        /// Converts a value to the target type
+        /// </summary>
+        /// <param name="value">The value to convert</param>
+        /// <param name="targetType">The target type</param>
+        /// <returns>Converted value</returns>
+        private static object ConvertValue(object value, Type targetType)
+        {
+            if (value == null) return null;
+
+            // If types match, return as-is
+            //if (value.GetType() == targetType) return value;
+
+            // Handle nullable types
+            if (targetType.IsGenericType && targetType.GetGenericTypeDefinition() == typeof(Nullable<>))
+            {
+                targetType = Nullable.GetUnderlyingType(targetType);
+            }
+
+            // Convert using Convert.ChangeType
+
+            object result = null;
+            try
+            {
+                result = Convert.ChangeType(value, targetType);
+            }
+            catch
+            {
+                // If conversion fails, return the original value
+                result = null;
+            }
+            return result;
+        }
+    }
+    public class Datum
+    {
+        public string Title { get; set; } = "";
+        public object? Value { get; set; }
+        public Datum(string title, object val)
+        {
+            Title = title;
+            Value = val;
+        }
+    }
+    public class Row
+    {
+        public List<Datum> Cells { get; set; } = new List<Datum>();
+    }
+    public class SortDefinition
+    {
+        public string Title { get; set; } = "";
+        public Type? Type_of_Field { get; set; }
+        public bool Is_Ascending = true;
+    }
+}
+<hr />
